@@ -75,7 +75,7 @@ test('Remote Auto runs as a server background function with a schedule and persi
  assert.ok(toml.includes('schedule = "0 * * * *"'));
  assert.ok(toml.includes('background = true'));
  assert.ok(worker.includes('export const config = { background: true }'));
- assert.ok(worker.includes('await writeHistory(rememberStory(history,story),store)'));
+ assert.ok(worker.includes('await writeHistory(rememberStory(latestHistory,story),store)'));
  assert.ok(state.includes('export function isStoryUsed'));
  assert.ok(state.includes('export async function readHistory'));
  assert.ok(html.includes('REMOTE_CONTROL_TOKEN'));
