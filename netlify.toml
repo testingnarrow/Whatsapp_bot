@@ -6,6 +6,7 @@
 [build.environment]
   NODE_VERSION = "22"
   SECRETS_SCAN_OMIT_PATHS = "netlify/functions/assets/AtkinsonHyperlegible-OFL.txt"
+  SECRETS_SCAN_OMIT_KEYS = "META_GRAPH_API_VERSION"
 
 [[redirects]]
   from = "/api/news"
