@@ -47,7 +47,7 @@ test('Server Auto explicitly loads a font and refuses to save graphics without v
  assert.ok(worker.includes('font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}'));
  assert.ok(worker.includes('function assertGraphicTextVisible(rendered)'));
  assert.ok(worker.includes('Auto graphic text did not render visibly'));
- assert.ok(worker.includes('Skipped a story that another run already added to server history'));
+ assert.ok(worker.includes('Skipped a story already recorded in server history'));
 });
 test('Manual and Auto use the same shared ranking, copy and photo-query core',()=>{
  const html=readFileSync('index.html','utf8'),worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8'),build=readFileSync('scripts/build-check.mjs','utf8');

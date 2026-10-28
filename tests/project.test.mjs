@@ -34,13 +34,13 @@ test('Photo search tries several categories and always has a clean artwork fallb
 });
 
 test('Generic photo search queries represent the subject rather than the exact news event',()=>{
- const html=readFileSync('index.html','utf8');
+ const html=readFileSync('index.html','utf8'),core=readFileSync('netlify/functions/lib/news-generation-core.mjs','utf8');
  const match=html.match(/function genericPhotoQuery\(title,hintedQuery\)\s*\{[\s\S]*?\n\}/);
  assert.ok(match,'genericPhotoQuery helper should exist');
  const genericPhotoQuery=new Function('return ('+match[0]+');')();
  assert.equal(genericPhotoQuery('Rare Nanotyrannus Skeleton Sells For $47.3M','nanotyrannus auction'),'museum dinosaur fossil skeleton exhibition');
  assert.equal(genericPhotoQuery('Judge dismisses a lawsuit','legal dispute'),'courthouse courtroom');
- assert.ok(html.includes('not an exact photo of this particular incident'));
+ assert.ok(core.includes('not an exact photo of this particular incident'));
 });
 test('Graphic typography uses a larger proportional title and keeps the badge away from the yellow panel',()=>{
  const html=readFileSync('index.html','utf8');
