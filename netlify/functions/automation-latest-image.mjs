@@ -6,7 +6,7 @@ export default async function handler(request) {
   try {
     const store=getRemoteStore(),latest=await store.get(LATEST_KEY,{type:"json",consistency:"strong"}),version=new URL(request.url).searchParams.get("version");
     let imageKey=latest&&latest.imageKey?latest.imageKey:LATEST_IMAGE_KEY;
-    if(version){const current=latest&&String(latest.generatedAt||latest.at||"")===version;imageKey=current&&latest.imageKey?latest.imageKey:current?LATEST_IMAGE_KEY:previewImageKey(version)}
+    if(version){const current=latest&&(String(latest.generatedAt||latest.at||"")===version||String(latest.imageUpdatedAt||"")===version);imageKey=current&&latest.imageKey?latest.imageKey:current?LATEST_IMAGE_KEY:previewImageKey(version)}
     const data=await store.get(imageKey,{type:"arrayBuffer",consistency:"strong"});
     if(!data)return new Response("No remote preview image was found for this version.",{status:404});
     return new Response(data, {

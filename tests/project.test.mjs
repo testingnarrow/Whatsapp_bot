@@ -81,6 +81,8 @@ test('Remote Auto runs as a server background function with a schedule and persi
  assert.ok(html.includes('REMOTE_CONTROL_TOKEN'));
  assert.ok(html.includes('/api/automation?action=status'));
  assert.ok(html.includes('/api/automation-image?version='));
+ assert.ok(html.includes("import('/news-generation-core.mjs')"));
+ assert.ok(worker.includes('buildDraftPrompt(chosen,articles)'));
  assert.ok(!html.includes('setTimeout(()=>{if(state.auto)generate'));
 });
 test('Server history canonicalizes tracking URLs and rejects repeat stories',()=>{

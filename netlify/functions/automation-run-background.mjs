@@ -1,4 +1,5 @@
 import { Resvg } from "@resvg/resvg-js";
+import { buildRankingPrompt, resolveRanking, genericPhotoQuery, photoQueries, cleanCaptionBody, hashtagsForPost, buildDraftPrompt, buildGraphicRepairPrompt, prepareDraftCopy, needsGraphicRepair, applyGraphicRepair, finalizeDraft, buildFallbackDraft } from "./lib/news-generation-core.mjs";
 import { stat, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,30 +113,7 @@ async function ai(prompt, apiKey, list, settings, store, tokens=2200) {
   }
   throw last || new Error("No text model available.");
 }
-function photoQuery(title,hint) {
-  const t=(String(title||"")+" "+String(hint||"")).toLowerCase(), rules=[
-    [/museum|exhibit|gallery|artifact|fossil|dinosaur|prehistoric|paleontolog|skeleton|nanotyrannus/,"museum dinosaur fossil skeleton exhibition"],
-    [/auction|auctioneer|bidding|bid\b|sold for/,"auction house bidding room"],
-    [/court|judge|lawsuit|trial|verdict/,"courthouse courtroom"],
-    [/police|crime|arrest|investigation/,"police vehicle city street"],
-    [/wildfire|firefighter|fire truck|blaze/,"firefighters emergency scene"],
-    [/flood|tornado|hurricane|storm|weather/,"storm clouds flooded city street"],
-    [/airplane|aircraft|airline|airport|flight/,"airport passenger airplane"],
-    [/train|railway|subway/,"train railway station"],
-    [/car|truck|vehicle|traffic|motorcycle/,"road traffic vehicles city street"],
-    [/rocket|space|satellite|astronaut/,"rocket launch space center"],
-    [/animal|dog|cat|wildlife|zoo|whale|bird|penguin/,"wildlife animals natural habitat"],
-    [/hospital|doctor|medical|health|patient/,"hospital medical professionals"],
-    [/school|student|teacher|classroom|university/,"school classroom education"],
-    [/restaurant|food|chef|meal|cooking/,"restaurant kitchen food preparation"],
-    [/football|basketball|baseball|soccer|tennis|sport/,"sports stadium competition"],
-    [/election|president|government|politic|congress/,"government building press conference"],
-    [/robot|artificial intelligence|\bai\b|computer|technology|software/,"technology computer laboratory"]
-  ];
-  const matched=rules.find(([p])=>p.test(t));
-  if(matched)return matched[1];
-  return String(hint||"").trim().split(/\s+/).filter(Boolean).slice(0,6).join(" ")||"news event public place";
-}
+function photoQuery(title,hint) {return genericPhotoQuery(title,hint)}
 function photoAlternates(q) {
   if(/museum|dinosaur|fossil|skeleton/.test(q))return ["natural history museum exhibit","dinosaur skeleton museum display","museum gallery exhibition hall","dinosaur fossil display","museum interior exhibition","science museum dinosaur exhibit"];
   if(/auction/.test(q))return ["auction house interior","auction gallery crowd","auction display tables","auctioneer bidding room","public auction interior"];
@@ -181,44 +159,31 @@ function renderSvg(draft,dataUri) {
   const photo=dataUri?'<image href="'+dataUri+'" x="0" y="0" width="1080" height="760" preserveAspectRatio="xMidYMid slice"/>':'<rect width="1080" height="760" fill="url(#fallback)"/><g opacity=".38" stroke="#c8d5ff" stroke-width="3" fill="none"><path d="M0 140L1080 680M0 300L930 760M160 0L700 760M620 0L1080 430M0 550L440 760"/><circle cx="150" cy="150" r="45" fill="#f5d323"/><circle cx="895" cy="190" r="70" fill="#7ed2ff"/><circle cx="760" cy="530" r="95" fill="#d7d6ff"/></g><text x="540" y="270" text-anchor="middle" font-family="Atkinson Hyperlegible" font-size="34" font-weight="700" fill="#f5d323">REMOTE / FIELD REPORT</text><text x="540" y="345" text-anchor="middle" font-family="Atkinson Hyperlegible" font-size="29" font-weight="700" fill="#ffffff">STORIES FROM THE UNEXPECTED</text>';
   return '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><defs><linearGradient id="fallback"><stop stop-color="#14113e"/><stop offset=".5" stop-color="#3d326d"/><stop offset="1" stop-color="#102e60"/></linearGradient><linearGradient id="fade" x2="0" y2="1"><stop stop-color="#100d46" stop-opacity="0"/><stop offset=".48" stop-color="#100d46" stop-opacity=".22"/><stop offset="1" stop-color="#100d46" stop-opacity=".97"/></linearGradient></defs><rect width="1080" height="1080" fill="#100d46"/>'+photo+'<rect y="210" width="1080" height="660" fill="url(#fade)"/><g fill="none" stroke="#aeb4ff" stroke-opacity=".62" stroke-width="2">'+grid+'<path d="M0 790H1080M0 845H1080M0 910H1080M0 990H1080"/></g><rect x="122" y="165" width="836" height="780" rx="40" fill="none" stroke="#fff" stroke-width="18"/><rect x="166" y="200" width="748" height="642" rx="27" fill="#f7d80e" stroke="#fff" stroke-width="10"/>'+a+b+'<rect x="403" y="866" width="274" height="55" rx="28" fill="#fff"/><text x="540" y="894" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible" font-size="27" font-weight="800" fill="#080808">'+esc(page)+'</text></svg>';
 }
-function cleanCaption(v){let s=String(v||"").replace(/\[[^\]]+\]\(https?:\/\/[^)]+\)/gi,"");s=s.replace(/(?:^|\n)\s*(sources?|references?|source links?|read more|links?)\s*:[\s\S]*$/i,"").replace(/https?:\/\/\S+/gi,"").replace(/(^|\s)#[a-z0-9_]+/gi," ");return s.replace(/\n{3,}/g,"\n\n").trim();}
-function tags(suggested,title,imageQuery){const out=[];const add=v=>{const t=String(v||"").replace(/^#+/,"").replace(/[^a-z0-9_]/gi,"").slice(0,30);if(t&&out.length<8&&!out.some(x=>x.toLowerCase()==="#"+t.toLowerCase()))out.push("#"+t);};add("News");for(const t of Array.isArray(suggested)?suggested:[])add(t);const s=(String(title||"")+" "+String(imageQuery||"")).toLowerCase();for(const [p,ts] of [[/dinosaur|fossil|skeleton|paleontolog|nanotyrannus/,["Dinosaur","Fossil","Museum","Science"]],[/auction|bidding/,["Auction","Collectibles"]],[/wildlife|animal|dog|cat|zoo/,["Animals","Wildlife"]],[/court|judge|lawsuit|trial/,["Court","Law"]],[/police|crime|arrest/,["Police","PublicSafety"]],[/weather|storm|flood/,["Weather","Climate"]],[/airport|airplane|flight/,["Aviation","Travel"]],[/sport|football|basketball|soccer/,["Sports","Competition"]],[/technology|computer|robot|software/,["Technology","Innovation"]]])if(p.test(s))ts.forEach(add);["WorldNews","TrendingNow","CurrentEvents","USNews","InterestingFacts","TopStories","TodayInNews"].forEach(add);return out.slice(0,8);}
-function fallbackDraft(s,detail){let title=String(s.title||"Unexpected News").replace(/\s+-\s+[^-]{2,70}$/,"").trim();if(title.length>56)title=title.slice(0,53).replace(/\s+\S*$/,"")+"...";const text=String(detail||s.description||s.title||"").replace(/\s+/g," ").trim();return{image_title:title,image_paragraph:(text||title).slice(0,315),caption:title+"\n\n"+text+"\n\nThe available details are limited, so this summary stays close to the published report.",image_query:photoQuery(title),hashtags:[],confidence:detail?"medium":"low",verification_note:"Based on the available headline and article text."};}
-async function makeDraft(s,detail,key,list,settings,store){
-  const fallback=fallbackDraft(s,detail);
-  const evidence={selected:s,related:[],articles:[{
-    title:s.title,url:s.url,source:s.source,date:s.publishedAt,
-    snippet:s.description,article_text:String(detail||"").slice(0,6000)
-  }]};
-  try {
-    const prompt='Write one accurate, engaging English Facebook news post for US readers using ONLY the supplied evidence. Start with a strong natural hook, explain what happened and why it matters, use 2-4 short readable paragraphs, and avoid robotic clickbait. Never invent names, numbers, quotes, dates, motives or outcomes. Never add source URLs, hyperlinks, citations, or a Sources/References section. For the graphic, write image_title (clear and catchy, max 56 characters) and image_paragraph (one concrete supported paragraph, ideally 250-310 characters, hard max 340). The paragraph must be substantial enough to fill the graphic without padding or repeating the title. Write caption of 110-160 words before hashtags. Provide exactly 8 short relevant hashtags including #News. Provide image_query with 3-6 generic English keywords for a representative category photo, not the exact event or named object. Return JSON only with image_title, image_paragraph, caption, hashtags, image_query, claims, verification_note, confidence (high|medium|low). Evidence: '+JSON.stringify(evidence);
-    const d=await ai(prompt,key,list,settings,store,3000);
-    d.image_title=String(d.image_title||fallback.image_title||s.title||"Latest News").trim().replace(/\s+/g," ");
-    d.image_paragraph=String(d.image_paragraph||fallback.image_paragraph||s.description||s.title||d.image_title).trim().replace(/\s+/g," ");
-    if(d.image_title.length>56 || d.image_paragraph.length<160 || d.image_paragraph.length>340){
-      const fixed=await ai('Improve this social news graphic copy for readability and balanced space. Do not change facts. The title must be max 56 characters. The paragraph should be 250-310 characters and never over 340. Return JSON only {"image_title":"...","image_paragraph":"..."}. Current copy: '+JSON.stringify({image_title:d.image_title,image_paragraph:d.image_paragraph}),key,list,settings,store,900);
-      d.image_title=String(fixed.image_title||d.image_title).trim().replace(/\s+/g," ");
-      d.image_paragraph=String(fixed.image_paragraph||d.image_paragraph).trim().replace(/\s+/g," ");
-    }
-    if(d.image_title.length>70 || d.image_paragraph.length>340) throw new Error("Graphic copy exceeds template limits after repair.");
-    if(d.image_paragraph.length<80) d.image_paragraph=(d.image_paragraph+" — Read the report for verified details.").slice(0,315);
-    d.image_query=photoQuery(s.title,d.image_query);
-    let body=cleanCaption(d.caption);
-    if(body.length<80) body=cleanCaption(fallback.caption);
-    if(!body) throw new Error("Caption is empty after source-link cleanup.");
-    const hashtagList=tags(d.hashtags,s.title,d.image_query);
-    d.caption=body+"\n\n"+hashtagList.join(" ");
-    d.hashtags=hashtagList;
-    d.confidence=["high","medium","low"].includes(String(d.confidence||"").toLowerCase())?String(d.confidence).toLowerCase():"medium";
-    d.verification_note=String(d.verification_note||fallback.verification_note||"Based on the available published report.").slice(0,300);
-    return d;
-  } catch(e) {
-    console.warn("Draft fallback:",String(e.message||e).slice(0,140));
-    fallback.image_query=photoQuery(s.title,fallback.image_query);
-    fallback.hashtags=tags([],s.title,fallback.image_query);
-    fallback.caption=cleanCaption(fallback.caption)+"\n\n"+fallback.hashtags.join(" ");
-    return fallback;
-  }
+function cleanCaption(v){return cleanCaptionBody(v)}
+function tags(suggested,title,imageQuery){return hashtagsForPost(suggested,title,imageQuery)}
+function fallbackDraft(story,detail){return buildFallbackDraft({selected:story},[{...story,articleText:String(detail||"")}])}
+async function makeDraft(chosen,articles,key,list,settings,store){
+ const fallback=buildFallbackDraft(chosen,articles);
+ try{let d=await ai(buildDraftPrompt(chosen,articles),key,list,settings,store,3000);d=prepareDraftCopy(d,chosen,articles);if(needsGraphicRepair(d)){const fixed=await ai(buildGraphicRepairPrompt(d),key,list,settings,store,800);d=applyGraphicRepair(d,fixed)}return finalizeDraft(d,chosen,articles)}
+ catch(error){console.warn("Shared Manual/Auto draft fallback:",String(error.message||error).slice(0,160));return finalizeDraft(fallback,chosen,articles)}
+}
+async function readArticleFromServer(root,story){
+ try{const d=await getJson(root+"/api/article?url="+encodeURIComponent(story.url),14000);return{...story,articleTitle:d.title||story.title,articleText:String(d.text||""),finalUrl:d.finalUrl||story.url,retrieval:d.status||"retrieved"}}
+ catch(error){return{...story,articleTitle:story.title,articleText:"",finalUrl:story.url,retrieval:"RSS snippet only: "+String(error.message||error).slice(0,120)}}
+}
+async function repairLegacyPreview(root,settings,store){
+ const old=await store.get(LATEST_KEY,{type:"json",consistency:"strong"});if(!old||Number(old.graphicTextVersion)>=2||!old.story||!old.imageKey)return false;
+ try{
+  const s=old.story||{},aa=Array.isArray(old.articles)?old.articles:[],a=aa.find(x=>x&&(x.url===s.url||x.finalUrl===s.url))||aa[0]||{},d={...(old.draft||{})};
+  const title=String(d.image_title||s.title||"Latest News").replace(/\s+/g," ").trim();let paragraph=String(d.image_paragraph||a.articleText||a.description||s.description||"").replace(/\s+/g," ").trim();
+  if(paragraph.length<80)paragraph=String(a.articleText||a.description||s.description||d.caption||s.title||title).replace(/\s+/g," ").trim();
+  if(paragraph.length<80)paragraph=(paragraph+" — The available report may develop as more verified details become available.").trim();
+  d.image_title=title.slice(0,56)||"Latest News";d.image_paragraph=paragraph.slice(0,315);d.page_name=String(settings.pageName||old.pageName||"REMOTE NEWS").trim().slice(0,28)||"REMOTE NEWS";d.caption=String(d.caption||s.title||"Latest News");
+  const photo=old.photo?await testImage(root,old.photo):null,fontFiles=await ensureGraphicFont(),rendered=new Resvg(renderSvg(d,photo&&photo.dataUri),{fitTo:{mode:"width",value:1080},font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}}).render();assertGraphicTextVisible(rendered);
+  const imageUpdatedAt=new Date().toISOString(),imageKey=previewImageKey(imageUpdatedAt);await store.set(imageKey,new Blob([rendered.asPng()],{type:"image/png"}));
+  await store.setJSON(LATEST_KEY,{...old,imageKey,imageUpdatedAt,graphicTextVersion:2,draft:d,pageName:d.page_name,photo:photo?photo.photo:null,imageWasFound:Boolean(photo)});
+  await patchSettings({lastMessage:"Rebuilt the saved preview so its graphic text is visible; original story history was unchanged."},store);console.log("REMOTE repaired legacy saved graphic",String(s.title||"").slice(0,100));return true
+ }catch(error){console.warn("Legacy preview repair skipped; Auto generation will continue:",String(error.message||error).slice(0,160));return false}
 }
 async function fail(store,settings,error){const h=Math.max(1,Math.min(12,Number(settings.intervalHours)||3)),n=Date.now();await patchSettings({lastCompletedAt:new Date(n).toISOString(),lastRunAt:new Date(n-Math.max(0,h-1)*3600000).toISOString(),lastStatus:"retrying",lastMessage:"Remote run failed; Auto remains enabled and will retry. "+String(error.message||error).slice(0,180)},store);}
 export default async function handler(req){
@@ -226,57 +191,33 @@ export default async function handler(req){
   const store=getRemoteStore();let settings=await readSettings(store);if(!settings.enabled){await patchSettings({lastStatus:"stopped",lastMessage:"Remote Auto is disabled."},store);return;}
   const root=base(),key=String(process.env.GEMINI_API_KEY||"");if(!root){await fail(store,settings,new Error("Netlify URL is missing."));return;}
   try{
-    await patchSettings({lastRunAt:new Date().toISOString(),lastStatus:"running",lastMessage:"Searching broader news sources and excluding previously used stories."},store);
+    await patchSettings({lastRunAt:new Date().toISOString(),lastStatus:"running",lastMessage:"Repairing any old preview with missing graphic text, then searching fresh news."},store);
+    await repairLegacyPreview(root,settings,store);
     const history=await readHistory(store),scan=await getFresh(root,history);
-    if(!scan.stories.length){settings=await readSettings(store);const h=Math.max(1,Math.min(12,Number(settings.intervalHours)||3)),n=Date.now();await patchSettings({lastCompletedAt:new Date(n).toISOString(),lastRunAt:new Date(n-Math.max(0,h-1)*3600000).toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Tried current, broad, older and wide searches. No unused story was found; the hourly server scheduler will retry."},store);return;}
-    let list=[];try{if(key)list=await models(key);}catch(e){console.warn("Gemini models unavailable:",String(e.message||e).slice(0,100));}
-    await patchSettings({lastMessage:"Ranking fresh story candidates and selecting the strongest unused report."},store);
-    let story=scan.stories[0];if(key&&list.length){try{const r=await ai("Choose the strongest fresh human-interest or unusual US news story from this list. Return JSON only {\"selected_id\":\"exact id\"}. Candidates: "+JSON.stringify(scan.stories.slice(0,45).map(s=>({id:s.id,title:s.title,source:s.source,date:s.publishedAt,description:String(s.description||"").slice(0,250),url:s.url}))),key,list,settings,store,700);const selected=scan.stories.find(s=>s.id===String(r.selected_id||""));if(selected)story=selected;}catch(e){console.warn("Ranking fallback, use next fresh story:",String(e.message||e).slice(0,100));}}
-    await patchSettings({lastMessage:"Reading the selected article and collecting report details."},store);
-    let detail=String(story.description||"");try{const d=await getJson(root+"/api/article?url="+encodeURIComponent(story.url),11000);if(d.text)detail=String(d.text).slice(0,6500);}catch{}
-    settings=await readSettings(store);
-    await patchSettings({lastMessage:"Drafting the graphic headline, on-image summary and full caption."},store);
-    let draft=key&&list.length?await makeDraft(story,detail,key,list,settings,store):fallbackDraft(story,detail);
-    const titleText=String(draft.image_title||story.title||"Latest News").replace(/\s+/g," ").trim();
-    draft.image_title=(titleText.slice(0,56)||"Latest News");
-    let paragraphText=String(draft.image_paragraph||detail||story.description||story.title||draft.image_title).replace(/\s+/g," ").trim();
-    if(paragraphText.length<80)paragraphText=(paragraphText+" — Read the full report for the latest verified details.").trim();
-    draft.image_paragraph=paragraphText.slice(0,315);
-    const captionFallback=String(story.title||"Latest News")+"\n\n"+String(detail||story.description||story.title||"The report has limited details at this time.")+"\n\nDetails may develop as more information becomes available.";
-    draft.caption=cleanCaption(draft.caption);
-    if(draft.caption.length<80)draft.caption=cleanCaption(captionFallback);
-    draft.hashtags=tags(draft.hashtags,story.title);
-    draft.caption+=(draft.caption?"\n\n":"")+draft.hashtags.join(" ");
-    draft.page_name=String(settings.pageName||"REMOTE NEWS").trim().slice(0,28)||"REMOTE NEWS";
-    await patchSettings({lastMessage:"Searching several generic photo categories and checking that the files really load."},store);
-    const q=photoQuery(story.title,draft.image_query),queries=[...new Set([q,...photoAlternates(q)])],photos=[],seen=new Set(),attempts=[];let chosen=null;
-    for(const query of queries){try{const d=await getJson(root+"/api/images?q="+encodeURIComponent(query)+"&limit=20",12000);attempts.push({query,count:Number(d.count)||0});for(const p of d.results||[]){const k=String(p.url||p.thumbnail||"");if(k&&!seen.has(k)){seen.add(k);photos.push(p);}}for(let i=0;i<photos.length;i+=4){const results=await Promise.all(photos.slice(i,i+4).map(p=>testImage(root,p)));chosen=results.find(Boolean)||chosen;if(chosen)break;}if(chosen)break;}catch(e){attempts.push({query,error:String(e.message||e).slice(0,120)});}}
-    await patchSettings({lastMessage:"Loading a guaranteed graphic font and rendering the headline, summary and page label."},store);
-    draft.image_title=String(draft.image_title||story.title||"Latest News").trim().slice(0,56)||"Latest News";
-    draft.image_paragraph=String(draft.image_paragraph||detail||story.description||story.title||draft.image_title).replace(/\s+/g," ").trim();
-    if(draft.image_paragraph.length<80)draft.image_paragraph=(draft.image_paragraph+" — Read the full report for verified details.").slice(0,315);
-    draft.caption=cleanCaption(draft.caption);
-    if(draft.caption.length<80)draft.caption=cleanCaption(fallbackDraft(story,detail).caption);
-    draft.hashtags=tags(draft.hashtags,story.title,draft.image_query);
-    draft.caption+="\n\n"+draft.hashtags.join(" ");
-    draft.page_name=String(settings.pageName||"REMOTE NEWS").trim().slice(0,28)||"REMOTE NEWS";
-    const fontFiles=await ensureGraphicFont();
-    const renderer=new Resvg(renderSvg(draft,chosen&&chosen.dataUri),{fitTo:{mode:"width",value:1080},font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}});
-    const rendered=renderer.render();
-    assertGraphicTextVisible(rendered);
-    const png=rendered.asPng();
-    await patchSettings({lastMessage:"Saving the completed post and recording its no-repeat history."},store);
-    const post={generatedAt:new Date().toISOString(),pageName:draft.page_name,draft,story,chosen:{selected:story,supporting:[],reason:"Selected from a wider news search.",confidence:draft.confidence||"medium"},articles:[{title:story.title,url:story.url,source:story.source,articleText:detail.slice(0,1200)}],photo:chosen?chosen.photo:null,photos:photos.slice(0,18),photoAttempts:attempts,imageWasFound:Boolean(chosen)};
-    post.imageKey=previewImageKey(post.generatedAt);
-    const latestHistory=await readHistory(store);
-    if(isStoryUsed(story,latestHistory)){
-      await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Skipped a story that another run already added to server history. The previous successful preview is unchanged."},store);
-      return;
-    }
-    await store.set(post.imageKey,new Blob([png],{type:"image/png"}));
-    await writeHistory(rememberStory(latestHistory,story),store);
-    await store.setJSON(LATEST_KEY,post);
-    await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"success",latestAt:post.generatedAt,lastMessage:"New post saved: "+String(story.title||"").slice(0,140)+(chosen?" with matching photo.":" All photo searches tried; branded artwork fallback used.")},store);
-    console.log("REMOTE created post",story.title,"photo",Boolean(chosen),"photo queries",attempts.length);
+    if(!scan.stories.length){settings=await readSettings(store);const h=Math.max(1,Math.min(12,Number(settings.intervalHours)||3)),n=Date.now();await patchSettings({lastCompletedAt:new Date(n).toISOString(),lastRunAt:new Date(n-Math.max(0,h-1)*3600000).toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"No unused story was found after the same broad search used by Manual. Existing preview is preserved; hourly scheduler will retry."},store);return}
+    let list=[];try{if(key)list=await models(key)}catch(e){console.warn("Gemini models unavailable:",String(e.message||e).slice(0,100))}
+    await patchSettings({lastMessage:"Ranking fresh candidates with the same assignment-editor prompt as Manual."},store);
+    const candidates=scan.stories.filter(x=>x&&x.title&&x.url&&!isStoryUsed(x,history)).slice(0,60);
+    let chosen={selected:candidates.slice().sort((a,b)=>(Date.parse(b.publishedAt)||0)-(Date.parse(a.publishedAt)||0))[0],supporting:[],reason:"Newest unused candidate after broad search.",confidence:"medium",gaps:[]};
+    if(key&&list.length){try{const result=await ai(buildRankingPrompt(candidates),key,list,settings,store,1000),ranked=resolveRanking(result,candidates,x=>isStoryUsed(x,history));if(ranked)chosen=ranked}catch(error){console.warn("Shared story ranking fallback:",String(error.message||error).slice(0,140))}}
+    if(!chosen.selected){await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Every candidate was previously used; keeping the last valid preview and retrying later."},store);return}
+    const story=chosen.selected,related=[story,...(chosen.supporting||[])].filter((x,i,a)=>x&&x.url&&a.findIndex(y=>y&&y.url===x.url)===i&&!isStoryUsed(x,history)).slice(0,4);
+    if(!related.some(x=>x.url===story.url))related.unshift(story);
+    await patchSettings({lastMessage:"Reading the selected article and up to three corroborating reports, as Manual does."},store);
+    const articles=await Promise.all(related.slice(0,4).map(x=>readArticleFromServer(root,x)));settings=await readSettings(store);
+    await patchSettings({lastMessage:"Drafting copy with the shared Manual/Auto headline, graphic-summary, caption and hashtag logic."},store);
+    const draft={...(await makeDraft(chosen,articles,key,list,settings,store)),page_name:String(settings.pageName||"REMOTE NEWS").trim().slice(0,28)||"REMOTE NEWS"};
+    await patchSettings({lastMessage:"Searching the same broad photo categories and checking multiple actual image loads."},store);
+    const terms=photoQueries(story.title,draft.image_query),photos=[],seen=new Set(),attempts=[];
+    for(const query of terms){try{const d=await getJson(root+"/api/images?q="+encodeURIComponent(query)+"&limit=20",14000);attempts.push({query,count:Number(d.count)||0});for(const p of d.results||[]){const k=String(p.id||p.url||p.thumbnail||"");if(p&&p.url&&!seen.has(k)){seen.add(k);photos.push(p)}}if(photos.length>=36)break}catch(error){attempts.push({query,error:String(error.message||error).slice(0,120)})}}
+    let chosenImage=null;for(let i=0;i<photos.length;i+=4){const batch=await Promise.all(photos.slice(i,i+4).map(p=>testImage(root,p)));chosenImage=batch.find(Boolean)||null;if(chosenImage)break}
+    await patchSettings({lastMessage:"Rendering the graphic and validating its headline, paragraph and badge."},store);
+    const fontFiles=await ensureGraphicFont(),rendered=new Resvg(renderSvg(draft,chosenImage&&chosenImage.dataUri),{fitTo:{mode:"width",value:1080},font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}}).render();assertGraphicTextVisible(rendered);
+    const png=rendered.asPng();await patchSettings({lastMessage:"Saving the post and updating no-repeat history only after graphic validation."},store);
+    const post={generatedAt:new Date().toISOString(),imageUpdatedAt:new Date().toISOString(),graphicTextVersion:2,pageName:draft.page_name,draft,story,chosen,articles,photo:chosenImage?chosenImage.photo:null,photos:photos.slice(0,18),photoAttempts:attempts,imageWasFound:Boolean(chosenImage)};post.imageKey=previewImageKey(post.generatedAt);
+    const latestHistory=await readHistory(store);if(isStoryUsed(story,latestHistory)){await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Skipped a story already recorded in server history. The repaired or previous valid preview remains visible."},store);return}
+    await store.set(post.imageKey,new Blob([png],{type:"image/png"}));await writeHistory(rememberStory(latestHistory,story),store);await store.setJSON(LATEST_KEY,post);
+    await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"success",latestAt:post.generatedAt,lastMessage:"New post saved: "+String(story.title||"").slice(0,140)+(chosenImage?" with verified representative photo.":" Broad photo search completed; branded artwork fallback used.")},store);
+    console.log("REMOTE created post",story.title,"photo",Boolean(chosenImage),"photo queries",attempts.length);
   }catch(e){console.error("REMOTE worker:",String(e.stack||e));settings=await readSettings(store).catch(()=>settings);await fail(store,settings,e);}
 }
