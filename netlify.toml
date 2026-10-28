@@ -2,10 +2,10 @@
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
-  SECRETS_SCAN_OMIT_PATHS = "netlify/functions/assets/AtkinsonHyperlegible-OFL.txt"
 
 [build.environment]
   NODE_VERSION = "22"
+  SECRETS_SCAN_OMIT_PATHS = "netlify/functions/assets/AtkinsonHyperlegible-OFL.txt"
 
 [[redirects]]
   from = "/api/news"
