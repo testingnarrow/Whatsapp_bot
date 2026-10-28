@@ -4,6 +4,7 @@ import { stat, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory, isStoryUsed, readPhotoHistory, writePhotoHistory, rememberPhoto, LATEST_KEY, previewImageKey } from "./lib/remote-state.mjs";
+import { publishLatestPost } from "./lib/facebook-publishing.mjs";
 
 export const config = { background: true };
 
@@ -205,6 +206,18 @@ export default async function handler(req){
     const latestHistory=await readHistory(store);if(isStoryUsed(story,latestHistory)){await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Skipped a story already recorded in server history. The repaired or previous valid preview remains visible."},store);return}
     await store.set(post.imageKey,new Blob([png],{type:"image/png"}));await writeHistory(rememberStory(latestHistory,story),store);if(chosenImage)await writePhotoHistory(rememberPhoto(photoHistory,chosenImage.photo,post.generatedAt),store);await store.setJSON(LATEST_KEY,post);
     await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"success",latestAt:post.generatedAt,lastMessage:"New post saved: "+String(story.title||"").slice(0,140)+(chosenImage?" with verified representative photo.":" Broad photo search completed; branded artwork fallback used.")},store);
+    const facebookSettings=await readSettings(store);
+    if(facebookSettings.facebookEnabled&&facebookSettings.facebookMode==="auto"){
+      try{
+        await patchSettings({facebookLastStatus:"publishing",facebookLastMessage:"Auto generated the post; uploading its saved image and caption to the Facebook Page."},store);
+        const facebookResult=await publishLatestPost(store,post.generatedAt,"auto");
+        console.log("REMOTE auto Facebook post published",facebookResult.postId||"already published");
+      }catch(facebookError){
+        const facebookMessage=String(facebookError&&facebookError.message||facebookError||"Facebook publishing failed").slice(0,300);
+        await patchSettings({facebookLastStatus:facebookError&&facebookError.uncertain?"uncertain":"failed",facebookLastMessage:facebookMessage},store);
+        console.error("REMOTE Facebook Auto publish failed:",facebookMessage);
+      }
+    }
     console.log("REMOTE created post",story.title,"photo",Boolean(chosenImage),"photo queries",attempts.length);
   }catch(e){console.error("REMOTE worker:",String(e.stack||e));settings=await readSettings(store).catch(()=>settings);await fail(store,settings,e);}
 }

@@ -25,7 +25,13 @@ export function defaultSettings() {
     lastStatus: "idle",
     lastMessage: "Remote Auto is stopped.",
     latestAt: null,
-    lastWorkingModel: ""
+    lastWorkingModel: "",
+    facebookEnabled: false,
+    facebookMode: "manual",
+    facebookLastStatus: "disabled",
+    facebookLastMessage: "Facebook publishing is off.",
+    facebookLastPostId: "",
+    facebookLastPostAt: null
   };
 }
 

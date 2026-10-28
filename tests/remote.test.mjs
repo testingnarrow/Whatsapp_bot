@@ -86,3 +86,22 @@ test('Auto repairs a legacy blank preview asset and refuses invisible graphics',
  const worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8'),endpoint=readFileSync('netlify/functions/automation-latest-image.mjs','utf8');
  assert.ok(worker.includes('async function repairLegacyPreview'));assert.ok(worker.includes('graphicTextVersion:2'));assert.ok(worker.includes('assertGraphicTextVisible(rendered)'));assert.ok(endpoint.includes('latest.imageUpdatedAt'));
 });
+
+test('Facebook publishing is server-side, uses the saved PNG plus caption, and gates Auto on settings',()=>{
+ const html=readFileSync('index.html','utf8'),settings=readFileSync('netlify/functions/automation-settings.mjs','utf8'),worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8'),publisher=readFileSync('netlify/functions/lib/facebook-publishing.mjs','utf8'),state=readFileSync('netlify/functions/lib/remote-state.mjs','utf8'),build=readFileSync('scripts/build-check.mjs','utf8');
+ assert.ok(html.includes('publishFacebookLatest'));
+ assert.ok(html.includes('expectedGeneratedAt:state.generated.at'));
+ assert.ok(html.includes('MANUAL APPROVAL'));
+ assert.ok(html.includes('FULL AUTO'));
+ assert.ok(settings.includes('actionName === "facebook-settings"'));
+ assert.ok(settings.includes('actionName === "publish-latest"'));
+ assert.ok(worker.includes('publishLatestPost(store,post.generatedAt,"auto")'));
+ assert.ok(worker.includes('facebookEnabled&&facebookSettings.facebookMode==="auto"'));
+ assert.ok(publisher.includes('store.get(imageKey, { type: "arrayBuffer", consistency: "strong" })'));
+ assert.ok(publisher.includes('form.append("message", message)'));
+ assert.ok(publisher.includes('form.append("source"'));
+ assert.ok(publisher.includes('FACEBOOK_PAGE_ACCESS_TOKEN'));
+ assert.ok(state.includes('facebookEnabled: false'));
+ assert.ok(build.includes('facebook-publishing.mjs'));
+ assert.ok(!html.includes('graph.facebook.com'));
+});

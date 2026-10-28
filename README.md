@@ -8,7 +8,7 @@ A preview-first build of REMOTE. It discovers unusual US-oriented news candidate
 - Gemini API key field, connection test, live model list, automatic budget-oriented Flash/Flash-Lite choice, and manual model selection.
 - Manual preview generation, server-side Auto timer (1–12 hours), step progress, event logs, source details in the validation panel, PNG download and caption copy. Captions are written for readers and include eight relevant hashtags without a Sources block or links.
 - Template text fit checks with a larger proportional headline/body type scale and fixed inner margins; eight relevant hashtags are appended to captions. If photo sources time out or return no images, fallback artwork is rendered instead of failing the post.
-- No Facebook credentials or publishing code in this version.
+- Facebook Page publishing through a server-only Graph API publisher. Manual Approval and Full Auto modes share the saved 1080×1080 PNG and exact generated caption; duplicate publication of the same saved preview is blocked.
 
 ## Run locally
 
@@ -39,9 +39,22 @@ For the website to keep generating news while the tab is closed, publish the `re
 - `GEMINI_API_KEY`: the Gemini API key used by unattended server runs.
 - `REMOTE_CONTROL_TOKEN`: a long, private random token that authorizes the Auto start/stop controls. Enter the same token in the website's **Server control token** field. Do not share it.
 
-Redeploy after adding or changing environment variables. In the website, choose the interval and press **Start server Auto**. The server runs a scheduled check every hour and starts a background run when the selected 1–12 hour interval is due. The latest caption/image and the permanent no-repeat story history are stored in Netlify Blobs and survive redeploys. Closing the website tab only stops live viewing; it does not stop server Auto. The current deployment is preview-only and does not publish posts to Facebook.
+Redeploy after adding or changing environment variables. In the website, choose the interval and press **Start server Auto**. The server runs a scheduled check every hour and starts a background run when the selected 1–12 hour interval is due. The latest caption/image and the permanent no-repeat story history are stored in Netlify Blobs and survive redeploys. Closing the website tab only stops live viewing; it does not stop server Auto. Facebook publishing can be enabled from the Facebook Page publishing card after setting the Page credentials below.
 
 Important: Netlify Scheduled Functions execute automatically on published production deploys, not branch/Deploy Preview deploys. Keep `remote-news` as the Production branch if you want unattended Auto.
+
+
+## Facebook Page publishing setup
+
+In Netlify **Site configuration → Environment variables**, set:
+
+- `FACEBOOK_PAGE_ID`: the numeric ID of the REMOTE Facebook Page.
+- `FACEBOOK_PAGE_ACCESS_TOKEN`: the **Page access token** for that Page (not an app token or a user token).
+- `META_GRAPH_API_VERSION` (optional): Graph API version, default `v26.0`.
+
+The Page token must have the appropriate Page permissions, including `pages_manage_posts`, `pages_read_engagement` and `pages_show_list`, and the token owner must have the Page task needed to create content. Follow Meta's app-mode/review requirements for your intended use. Do not commit these secrets or paste them into the site UI. Redeploy after setting or changing them.
+
+In REMOTE, open **Facebook Page publishing** and turn publishing ON. **Manual Approval** keeps new posts as previews until you click **Publish to Facebook**. **Full Auto** sends the same saved PNG and caption after a successful server Auto run. The Publish button is available for a saved preview in either mode. Turning publishing OFF prevents both manual and automatic publishing. If Facebook times out without returning a result, the post outcome is marked uncertain and retry is blocked until you check the Page, to reduce duplicate posts.
 
 ## Gemini key and model choice
 
