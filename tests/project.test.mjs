@@ -26,7 +26,8 @@ test('Gemini model compatibility accepts models/ prefixed 3.8 and 3.5 IDs and re
 test('Photo search tries several categories and always has a clean artwork fallback',()=>{
  const html=readFileSync('index.html','utf8');
  assert.ok(html.includes('function photoQueries(title,hint)'));
- assert.ok(html.includes('for(let i=0;i<photos.length;i+=4)'));
+ assert.ok(html.includes('for(let i=0;i<photoCandidates.length;i+=4)'));
+ assert.ok(html.includes('core.filterUnseenPhotos(photos,recentPhotoHistory)'));
  assert.ok(html.includes('render(null,draft)'));
  assert.ok(html.includes('STORIES FROM THE UNEXPECTED'));
  assert.doesNotMatch(html,/Photo unavailable/);
