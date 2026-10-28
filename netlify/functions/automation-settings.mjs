@@ -117,6 +117,7 @@ export default async function handler(request) {
       await patchSettings({
         enabled: true,
         intervalHours,
+        pageName: String(body.pageName || settings.pageName || "REMOTE NEWS").trim().slice(0,28) || "REMOTE NEWS",
         lastRunAt: new Date().toISOString(),
         lastStatus: "queued",
         lastMessage: "Remote Auto is enabled. The first server-side run has been queued."
@@ -148,6 +149,7 @@ export default async function handler(request) {
       const intervalHours = Math.min(12, Math.max(1, Number(body.intervalHours) || settings.intervalHours || 3));
       const updated = await patchSettings({
         intervalHours,
+        pageName: String(body.pageName || settings.pageName || "REMOTE NEWS").trim().slice(0,28) || "REMOTE NEWS",
         lastMessage: settings.enabled
           ? "Remote Auto is active on the server; the new interval is saved."
           : "Interval saved. Press Run now to enable server-side Auto."
