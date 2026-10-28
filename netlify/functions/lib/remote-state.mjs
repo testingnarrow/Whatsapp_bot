@@ -5,7 +5,11 @@ export const SETTINGS_KEY = "settings";
 export const HISTORY_KEY = "history";
 export const LATEST_KEY = "latest";
 export const LATEST_IMAGE_KEY = "latest.png";
-
+export function previewImageKey(generatedAt) {
+  const safe=String(generatedAt||"").replace(/[^a-zA-Z0-9_-]/g,"");
+  if(!safe)throw new Error("A valid preview timestamp is required.");
+  return "preview-"+safe+".png";
+}
 export function getRemoteStore() {
   return createStore(STORE_NAME);
 }

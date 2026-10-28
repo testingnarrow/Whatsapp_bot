@@ -3,7 +3,7 @@ import { getRemoteStore, readSettings, patchSettings } from "./lib/remote-state.
 export const config = { schedule: "0 * * * *" };
 
 function siteBase() {
-  const value = process.env.URL || process.env.DEPLOY_PRIME_URL || process.env.DEPLOY_URL || "";
+  const value = process.env.DEPLOY_PRIME_URL || process.env.DEPLOY_URL || process.env.URL || "";
   return value ? value.replace(/\/+$/, "") : "";
 }
 

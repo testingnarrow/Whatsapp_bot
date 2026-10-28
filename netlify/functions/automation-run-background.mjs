@@ -1,9 +1,9 @@
 import { Resvg } from "@resvg/resvg-js";
-import { getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory, isStoryUsed, LATEST_KEY, LATEST_IMAGE_KEY } from "./lib/remote-state.mjs";
+import { getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory, isStoryUsed, LATEST_KEY, previewImageKey } from "./lib/remote-state.mjs";
 
 export const config = { background: true };
 
-const base = () => String(process.env.URL || process.env.DEPLOY_PRIME_URL || process.env.DEPLOY_URL || "").replace(/\/+$/, "");
+const base = () => String(process.env.DEPLOY_PRIME_URL || process.env.DEPLOY_URL || process.env.URL || "").replace(/\/+$/, "");
 function auth(req) {
   const a = String(process.env.REMOTE_CONTROL_TOKEN || ""), b = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!a || a.length !== b.length || !b) return false;
@@ -155,7 +155,10 @@ export default async function handler(req){
     for(const query of queries){try{const d=await getJson(root+"/api/images?q="+encodeURIComponent(query)+"&limit=20",12000);attempts.push({query,count:Number(d.count)||0});for(const p of d.results||[]){const k=String(p.url||p.thumbnail||"");if(k&&!seen.has(k)){seen.add(k);photos.push(p);}}for(let i=0;i<photos.length;i+=4){const results=await Promise.all(photos.slice(i,i+4).map(p=>testImage(root,p)));chosen=results.find(Boolean)||chosen;if(chosen)break;}if(chosen)break;}catch(e){attempts.push({query,error:String(e.message||e).slice(0,120)});}}
     const png=new Resvg(renderSvg({...draft,page_name:"REMOTE NEWS"},chosen&&chosen.dataUri),{fitTo:{mode:"width",value:1080}}).render().asPng();
     const post={generatedAt:new Date().toISOString(),draft,story,chosen:{selected:story,supporting:[],reason:"Selected from a wider news search.",confidence:draft.confidence||"medium"},articles:[{title:story.title,url:story.url,source:story.source,articleText:detail.slice(0,1200)}],photo:chosen?chosen.photo:null,photos:photos.slice(0,18),photoAttempts:attempts,imageWasFound:Boolean(chosen)};
-    await store.set(LATEST_IMAGE_KEY,new Blob([png],{type:"image/png"}));await store.setJSON(LATEST_KEY,post);await writeHistory(rememberStory(history,story),store);
+    post.imageKey=previewImageKey(post.generatedAt);
+    await store.set(post.imageKey,new Blob([png],{type:"image/png"}));
+    await writeHistory(rememberStory(history,story),store);
+    await store.setJSON(LATEST_KEY,post);
     await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"success",latestAt:post.generatedAt,lastMessage:"New post saved: "+String(story.title||"").slice(0,140)+(chosen?" with matching photo.":" All photo searches tried; branded artwork fallback used.")},store);
     console.log("REMOTE created post",story.title,"photo",Boolean(chosen),"photo queries",attempts.length);
   }catch(e){console.error("REMOTE worker:",String(e.stack||e));settings=await readSettings(store).catch(()=>settings);await fail(store,settings,e);}
