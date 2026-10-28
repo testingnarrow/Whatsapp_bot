@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   canonicalStoryUrl, normalizeStoryTitle, isStoryUsed, rememberStory, writeHistory
 } from '../netlify/functions/lib/remote-state.mjs';
@@ -37,4 +38,20 @@ test('rememberStory does not add duplicate stories twice',()=>{
   const second=rememberStory(first,{...story,title:'Unexpected museum discovery draws attention',url:'https://news.example/museum-story?utm_source=share'});
   assert.equal(second.length,1);
   assert.equal(first.length,1);
+});
+
+test('Server Auto explicitly loads a font and refuses to save graphics without visible text',()=>{
+ const worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8');
+ assert.ok(worker.includes('async function ensureGraphicFont()'));
+ assert.ok(worker.includes('font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}'));
+ assert.ok(worker.includes('function assertGraphicTextVisible(rendered)'));
+ assert.ok(worker.includes('Auto graphic text did not render visibly'));
+ assert.ok(worker.includes('Skipped a story that another run already added to server history'));
+});
+test('Server Auto repairs empty graphic copy and uses generic photo hints',()=>{
+ const worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8');
+ assert.ok(worker.includes('d.image_paragraph=String(d.image_paragraph||fallback.image_paragraph'));
+ assert.ok(worker.includes('if(d.image_title.length>56 || d.image_paragraph.length<160 || d.image_paragraph.length>340)'));
+ assert.ok(worker.includes('photoQuery(story.title,draft.image_query)'));
+ assert.ok(worker.includes('draft.page_name=String(settings.pageName||"REMOTE NEWS")'));
 });
