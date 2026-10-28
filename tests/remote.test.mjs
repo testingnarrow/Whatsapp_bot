@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   canonicalStoryUrl, normalizeStoryTitle, isStoryUsed, rememberStory, writeHistory
 } from '../netlify/functions/lib/remote-state.mjs';
-import {buildRankingPrompt,resolveRanking,needsGraphicRepair,prepareDraftCopy,finalizeDraft,buildFallbackDraft,photoQueries} from '../netlify/functions/lib/news-generation-core.mjs';
+import {buildRankingPrompt,resolveRanking,needsGraphicRepair,prepareDraftCopy,finalizeDraft,buildFallbackDraft,photoQueries,photoIdentityKeys,isPhotoUsed,filterUnseenPhotos} from '../netlify/functions/lib/news-generation-core.mjs';
 
 test('canonical story URLs ignore tracking parameters and trailing fragments',()=>{
   assert.equal(
@@ -66,6 +66,21 @@ test('Shared ranking resolves corroborating stories but excludes history duplica
  const list=[{id:'one',title:'Fresh museum story',url:'https://news.example/one'},{id:'two',title:'Corroborating museum report',url:'https://news.example/two'},{id:'old',title:'Already-used story',url:'https://news.example/old'}];
  assert.ok(buildRankingPrompt(list).includes('supporting_ids'));const picked=resolveRanking({selected_id:'one',supporting_ids:['two','old'],confidence:'high'},list,x=>x.id==='old');
  assert.equal(picked.selected.id,'one');assert.deepEqual(picked.supporting.map(x=>x.id),['two']);
+});
+test('Shared photo history blocks repeated source photos across Manual and Auto',()=>{
+ const old={id:'commons-42',provider:'Wikimedia Commons',url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Fossil.jpg/1200px-Fossil.jpg',foreign_landing_url:'https://commons.wikimedia.org/wiki/File:Fossil.jpg',title:'Fossil photo'};
+ const same={...old,url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Fossil.jpg/800px-Fossil.jpg'};
+ const other={id:'commons-43',provider:'Wikimedia Commons',url:'https://upload.wikimedia.org/wikipedia/commons/other.jpg',foreign_landing_url:'https://commons.wikimedia.org/wiki/File:Other.jpg'};
+ const history=[{keys:photoIdentityKeys(old)}];
+ assert.equal(isPhotoUsed(same,history),true);
+ assert.deepEqual(filterUnseenPhotos([same,other],history),[other]);
+});
+test('Manual and Auto share persistent photo history and both skip previously-used photos',()=>{
+ const html=readFileSync('index.html','utf8'),worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8'),settings=readFileSync('netlify/functions/automation-settings.mjs','utf8'),state=readFileSync('netlify/functions/lib/remote-state.mjs','utf8');
+ assert.ok(html.includes('core.filterUnseenPhotos(photos,recentPhotoHistory)'));
+ assert.ok(worker.includes('filterUnseenPhotos(photos,photoHistory)'));
+ assert.ok(settings.includes('action === "photo-history"'));
+ assert.ok(state.includes('PHOTO_HISTORY_KEY'));
 });
 test('Auto repairs a legacy blank preview asset and refuses invisible graphics',()=>{
  const worker=readFileSync('netlify/functions/automation-run-background.mjs','utf8'),endpoint=readFileSync('netlify/functions/automation-latest-image.mjs','utf8');

@@ -1,7 +1,8 @@
 import {
   getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory,
-  LATEST_KEY, previewImageKey
+  LATEST_KEY, previewImageKey, readPhotoHistory, writePhotoHistory, rememberPhoto
 } from "./lib/remote-state.mjs";
+import { isPhotoUsed } from "./lib/news-generation-core.mjs";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -78,6 +79,14 @@ export default async function handler(request) {
         const history = await readHistory(store);
         return json(200, { count: history.length, recent: history.slice(-30).reverse() });
       }
+      if (action === "photo-history") {
+        let photoHistory = await readPhotoHistory(store);
+        const latest = await store.get(LATEST_KEY, { type: "json", consistency: "strong" });
+        if (latest && latest.photo && !isPhotoUsed(latest.photo, photoHistory)) {
+          photoHistory = rememberPhoto(photoHistory, latest.photo, latest.imageUpdatedAt || latest.generatedAt || new Date().toISOString());
+        }
+        return json(200, { photoHistory: photoHistory.slice(-40) });
+      }
       return json(200, { status: publicStatus(settings) });
     }
 
@@ -102,9 +111,9 @@ export default async function handler(request) {
       const s=p.story&&typeof p.story==="object"?p.story:{}, story={id:String(s.id||"").slice(0,160),title:String(s.title||"").trim().slice(0,240),url:String(s.url||"").slice(0,2048),source:String(s.source||"").slice(0,160),publishedAt:String(s.publishedAt||"").slice(0,80),description:String(s.description||"").slice(0,2000)};
       if(!story.title||!/^https?:\/\//i.test(story.url))return json(400,{error:"A story title and valid URL are required."});
       const draft=p.draft&&typeof p.draft==="object"?p.draft:{};if(JSON.stringify(draft).length>30000)return json(413,{error:"Preview metadata is too large."});
-      const photo=v=>!v||typeof v!=="object"?null:{title:String(v.title||"").slice(0,240),url:String(v.url||"").slice(0,2048),thumbnail:String(v.thumbnail||"").slice(0,2048),creator:String(v.creator||v.author||"").slice(0,240),license:String(v.license||"").slice(0,240),source:String(v.source||v.provider||"").slice(0,160)};
+      const photo=v=>!v||typeof v!=="object"?null:{id:String(v.id||"").slice(0,300),provider:String(v.provider||v.source||"").slice(0,100),title:String(v.title||"").slice(0,240),url:String(v.url||"").slice(0,2048),thumbnail:String(v.thumbnail||"").slice(0,2048),foreign_landing_url:String(v.foreign_landing_url||v.landing_url||"").slice(0,2048),creator:String(v.creator||v.author||"").slice(0,240),license:String(v.license||"").slice(0,240),source:String(v.source||v.provider||"").slice(0,160)};
       const generatedAt=new Date().toISOString(),post={generatedAt,at:generatedAt,imageKey:previewImageKey(generatedAt),draft,story,chosen:{selected:story,supporting:[],reason:String(p.chosen&&p.chosen.reason||"").slice(0,500),confidence:String(p.chosen&&p.chosen.confidence||draft.confidence||"medium").slice(0,20)},articles:Array.isArray(p.articles)?p.articles.slice(0,4).map(x=>({title:String(x&&(x.articleTitle||x.title)||"").slice(0,240),url:String(x&&(x.finalUrl||x.url)||"").slice(0,2048),source:String(x&&x.source||"").slice(0,160),articleText:String(x&&x.articleText||"").slice(0,2000)})):[],photo:photo(p.photo),photos:Array.isArray(p.photos)?p.photos.slice(0,18).map(photo).filter(Boolean):[],imageWasFound:Boolean(p.photo)};
-      await store.set(post.imageKey,new Blob([bytes],{type:"image/png"}));const history=await readHistory(store);await writeHistory(rememberStory(history,story),store);await store.setJSON(LATEST_KEY,post);
+      await store.set(post.imageKey,new Blob([bytes],{type:"image/png"}));const history=await readHistory(store);await writeHistory(rememberStory(history,story),store);if(post.photo){const photoHistory=await readPhotoHistory(store);await writePhotoHistory(rememberPhoto(photoHistory,post.photo,generatedAt),store);}await store.setJSON(LATEST_KEY,post);
       return json(200,{ok:true,generatedAt,imageKey:post.imageKey});
     }
 

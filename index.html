@@ -204,8 +204,8 @@ async function writeDraft(chosen,articles){
  return core.finalizeDraft(d,chosen,articles);
 }
 function photoQueries(title,hint){const primary=genericPhotoQuery(title,hint);const t=String(title||'').toLowerCase();let broad=[];if(/museum|fossil|dinosaur|skeleton|prehistoric/.test(t))broad=['museum dinosaur fossil skeleton exhibition','natural history museum exhibit','dinosaur skeleton museum display','museum gallery exhibition hall','dinosaur fossil display','science museum dinosaur exhibit'];else if(/auction|bidding|sold for/.test(t))broad=['auction house bidding room','auction house interior','auction gallery crowd','auction display tables','auctioneer bidding room'];else if(/court|judge|lawsuit|trial/.test(t))broad=['courthouse courtroom','courthouse interior','judge courtroom','court building exterior'];else if(/animal|wildlife|dog|cat|zoo|bird/.test(t))broad=['wildlife animals natural habitat','zoo animal exhibit','wildlife rescue centre','animal close up outdoors'];else if(/airport|airplane|flight|airline/.test(t))broad=['airport passenger airplane','airport terminal passengers','aircraft on runway','airline check in hall'];else broad=[primary,'public building exterior','people at a public event','museum exhibition hall','city street everyday life','community event crowd'];return [...new Set([primary,String(hint||'').trim(),...broad].filter(Boolean))].slice(0,7)}
-async function searchPhotos(q,fallback){
- const core=await generationCorePromise,queries=core.photoQueries(fallback||q,q),diagnostics=[],merged=[],seen=new Set();
+async function searchPhotos(q,fallback,storyTitle){
+ const core=await generationCorePromise,queries=core.photoQueries(storyTitle||fallback||q,q),diagnostics=[],merged=[],seen=new Set();
  for(const term of queries){
   try{
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),14000);let r,d;
@@ -285,7 +285,7 @@ function credit(p){
 function renderPhotos(){
  const h=$('photoList');h.innerHTML='';$('photoCount').textContent=state.photos.length+' found';
  if(!state.photos.length){h.innerHTML='<div class="empty" style="grid-column:1/-1">No source photo returned this time. A fallback visual was used; the post is still generated.</div>';return}
- state.photos.slice(0,9).forEach((p,i)=>{const b=document.createElement('button');b.className='photo'+(i===state.selectedPhoto?' selected':'');b.type='button';const im=document.createElement('img');im.loading='lazy';im.alt=p.title||'Photo candidate';im.src=proxied(p.thumbnail||p.url);const s=document.createElement('span');s.textContent=(p.title||'Photo')+' · '+(p.license||'licence not reported');b.append(im,s);b.onclick=async()=>{if(state.busy)return;state.selectedPhoto=i;renderPhotos();busy(true);try{const png=await render(p,state.generated.draft);state.generated.png=png;state.generated.photo=p;$('wallImage').src=png;$('wallImage').classList.remove('hidden');$('wallEmpty').classList.add('hidden');credit(p);log('Selected another photo and re-rendered the card.','ok')}catch(e){notice('feedStatus','That photo could not load. The existing preview is unchanged. '+e.message,'warn');log('Selected photo could not load: '+e.message,'')}finally{busy(false)}};h.append(b)})
+ state.photos.slice(0,9).forEach((p,i)=>{const b=document.createElement('button');b.className='photo'+(i===state.selectedPhoto?' selected':'');b.type='button';const im=document.createElement('img');im.loading='lazy';im.alt=p.title||'Photo candidate';im.src=proxied(p.thumbnail||p.url);const s=document.createElement('span');s.textContent=(p.title||'Photo')+' · '+(p.license||'licence not reported');b.append(im,s);b.onclick=async()=>{if(state.busy)return;state.selectedPhoto=i;renderPhotos();busy(true);try{const png=await render(p,state.generated.draft);state.generated.png=png;state.generated.photo=p;$('wallImage').src=png;$('wallImage').classList.remove('hidden');$('wallEmpty').classList.add('hidden');credit(p);const saved=await saveRemotePreview(state.generated);state.remoteLatestAt=saved.generatedAt||state.remoteLatestAt;log('Selected another photo, re-rendered the card, and saved it to shared photo history.','ok')}catch(e){notice('feedStatus','That photo could not load. The existing preview is unchanged. '+e.message,'warn');log('Selected photo could not load: '+e.message,'')}finally{busy(false)}};h.append(b)})
 }
 function validation(story,chosen,articles,draft,photo){
  const h=$('validationList');h.innerHTML='';const sources=[story].concat(chosen.supporting||[]),domains=new Set(sources.map(s=>{try{return new URL(s.url).hostname.replace(/^www\\./,'')}catch{return''}}).filter(Boolean));
@@ -293,6 +293,9 @@ function validation(story,chosen,articles,draft,photo){
  rows.forEach(p=>{const r=document.createElement('div');r.className='meta-row';const a=document.createElement('span'),b=document.createElement('span');a.textContent=p[0];b.textContent=p[1];r.append(a,b);h.append(r)});
  const n=document.createElement('div');n.className='notice '+(domains.size>1&&draft.confidence==='high'?'ok':'warn');n.style.marginTop='6px';n.textContent=(draft.verification_note||'AI draft; open source links before relying on claims.')+' AI checks do not guarantee factual truth.';h.append(n);
  sources.slice(0,5).forEach(s=>{const a=document.createElement('a');a.href=s.url;a.target='_blank';a.rel='noopener noreferrer';a.style.fontSize='11px';a.style.overflowWrap='anywhere';a.textContent=(s.source||'Source')+': '+s.title;h.append(a)})
+}
+async function getRecentPhotoHistory(){
+ try{const r=await fetch('/api/automation?action=photo-history',{cache:'no-store'});if(!r.ok)return[];const data=await r.json();return Array.isArray(data.photoHistory)?data.photoHistory:[]}catch{return[]}
 }
 async function generate(kind,epoch){
  if(state.busy)return;
@@ -317,18 +320,21 @@ async function generate(kind,epoch){
   if(kind==='auto'&&epoch!==state.epoch)return;
   step(2);job('Searching matching photos','Trying multiple general photo categories and checking real image loads…',55);
   let photos=[];
-  try{photos=await searchPhotos(draft.image_query||genericPhotoQuery(chosen.selected.title),genericPhotoQuery(chosen.selected.title))}catch(e){log('A photo search round failed; continuing with other categories. '+e.message,'')}
+  try{photos=await searchPhotos(draft.image_query||genericPhotoQuery(chosen.selected.title),genericPhotoQuery(chosen.selected.title),chosen.selected.title)}catch(e){log('A photo search round failed; continuing with other categories. '+e.message,'')}
   if(state.photoSearchDiagnostics)state.photoSearchDiagnostics.forEach(d=>log('Photo query "'+d.query+'": '+d.count+' candidate(s)'+(d.error?' — '+d.error:''),d.count?'ok':''));
-  state.photos=photos;state.selectedPhoto=0;
+  const core=await generationCorePromise,recentPhotoHistory=await getRecentPhotoHistory(),photoCandidates=core.filterUnseenPhotos(photos,recentPhotoHistory);
+  if(photoCandidates.length<photos.length)log('Skipped '+(photos.length-photoCandidates.length)+' recently used photo candidate(s) to avoid repeating the same picture.','');
+  if(photos.length&&!photoCandidates.length)log('All returned photos were recently used; using the branded fallback artwork rather than repeating one.','');
+  state.photos=photoCandidates;state.selectedPhoto=0;
   if(kind==='auto'&&epoch!==state.epoch)return;
-  step(3);job('Rendering post','Testing multiple image candidates before using the branded fallback artwork.',76);
+  step(3);job('Rendering post','Testing multiple unused photo candidates before using the branded fallback artwork.',76);
   let photo=null,png=null,lastError=null;
-  for(let i=0;i<photos.length;i+=4){
-   const batch=await Promise.all(photos.slice(i,i+4).map(async p=>{try{await getImage(proxied(p.url));return p}catch(e){lastError=e;return null}}));
+  for(let i=0;i<photoCandidates.length;i+=4){
+   const batch=await Promise.all(photoCandidates.slice(i,i+4).map(async p=>{try{await getImage(proxied(p.url));return p}catch(e){lastError=e;return null}}));
    const candidate=batch.find(Boolean);
    if(candidate){try{png=await render(candidate,draft);photo=candidate;break}catch(e){lastError=e;log('Photo render failed; testing another result. '+e.message,'')}}
   }
-  if(!photo){log('All matching-photo searches and candidate loads were tried; using clean branded editorial artwork.','');png=await render(null,draft)}
+  if(!photo){log('All unused matching-photo searches and candidate loads were tried; using clean branded editorial artwork.','');png=await render(null,draft)}
   if(kind==='auto'&&epoch!==state.epoch)return;
   state.generated={draft,story:chosen.selected,chosen,articles,photo,png,at:new Date().toISOString()};
   $('previewBadge').textContent='PREVIEW READY';$('statGraphic').textContent='Ready';$('downloadPng').disabled=false;$('copyCaption').disabled=false;

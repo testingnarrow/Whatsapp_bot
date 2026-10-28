@@ -1,8 +1,10 @@
 import { getStore as createStore } from "@netlify/blobs";
+import { photoIdentityKeys } from "./news-generation-core.mjs";
 
 export const STORE_NAME = "remote-automation";
 export const SETTINGS_KEY = "settings";
 export const HISTORY_KEY = "history";
+export const PHOTO_HISTORY_KEY = "photo-history";
 export const LATEST_KEY = "latest";
 export const LATEST_IMAGE_KEY = "latest.png";
 export function previewImageKey(generatedAt) {
@@ -48,6 +50,26 @@ export async function writeHistory(history, store = getRemoteStore()) {
   const safe = Array.isArray(history) ? history : [];
   await store.setJSON(HISTORY_KEY, safe);
   return safe;
+}
+
+export async function readPhotoHistory(store = getRemoteStore()) {
+  const value = await store.get(PHOTO_HISTORY_KEY, { type: "json", consistency: "strong" });
+  return Array.isArray(value) ? value : [];
+}
+export async function writePhotoHistory(history, store = getRemoteStore()) {
+  const safe = Array.isArray(history) ? history.slice(-40) : [];
+  await store.setJSON(PHOTO_HISTORY_KEY, safe);
+  return safe;
+}
+export function rememberPhoto(history, photo, usedAt = new Date().toISOString()) {
+  const keys = photoIdentityKeys(photo);
+  if (!keys.length) return Array.isArray(history) ? history.slice(-40) : [];
+  const existing = (Array.isArray(history) ? history : []).filter(item => {
+    const known = item && Array.isArray(item.keys) ? item.keys : [];
+    return !keys.some(key => known.includes(key));
+  });
+  existing.push({ keys, provider: String(photo.provider || photo.source || "").slice(0, 100), id: String(photo.id || "").slice(0, 300), title: String(photo.title || "").slice(0, 240), url: String(photo.url || "").slice(0, 2048), foreign_landing_url: String(photo.foreign_landing_url || photo.landing_url || "").slice(0, 2048), usedAt });
+  return existing.slice(-40);
 }
 
 export function canonicalStoryUrl(value) {

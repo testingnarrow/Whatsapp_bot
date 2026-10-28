@@ -1,9 +1,9 @@
 import { Resvg } from "@resvg/resvg-js";
-import { buildRankingPrompt, resolveRanking, genericPhotoQuery, photoQueries, cleanCaptionBody, hashtagsForPost, buildDraftPrompt, buildGraphicRepairPrompt, prepareDraftCopy, needsGraphicRepair, applyGraphicRepair, finalizeDraft, buildFallbackDraft } from "./lib/news-generation-core.mjs";
+import { buildRankingPrompt, resolveRanking, photoQueries, filterUnseenPhotos, isPhotoUsed, cleanCaptionBody, hashtagsForPost, buildDraftPrompt, buildGraphicRepairPrompt, prepareDraftCopy, needsGraphicRepair, applyGraphicRepair, finalizeDraft, buildFallbackDraft } from "./lib/news-generation-core.mjs";
 import { stat, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory, isStoryUsed, LATEST_KEY, previewImageKey } from "./lib/remote-state.mjs";
+import { getRemoteStore, readSettings, patchSettings, readHistory, writeHistory, rememberStory, isStoryUsed, readPhotoHistory, writePhotoHistory, rememberPhoto, LATEST_KEY, previewImageKey } from "./lib/remote-state.mjs";
 
 export const config = { background: true };
 
@@ -113,14 +113,6 @@ async function ai(prompt, apiKey, list, settings, store, tokens=2200) {
   }
   throw last || new Error("No text model available.");
 }
-function photoQuery(title,hint) {return genericPhotoQuery(title,hint)}
-function photoAlternates(q) {
-  if(/museum|dinosaur|fossil|skeleton/.test(q))return ["natural history museum exhibit","dinosaur skeleton museum display","museum gallery exhibition hall","dinosaur fossil display","museum interior exhibition","science museum dinosaur exhibit"];
-  if(/auction/.test(q))return ["auction house interior","auction gallery crowd","auction display tables","auctioneer bidding room","public auction interior"];
-  if(/court|judge|lawsuit/.test(q))return ["courthouse interior","judge courtroom","court building exterior","law court hearing room"];
-  if(/animal|wildlife|zoo|dog|cat/.test(q))return ["wildlife animals natural habitat","zoo animal exhibit","wildlife rescue centre","animal close up outdoors"];
-  return ["public building exterior","people at a public event","museum exhibition hall","city street everyday life","community event crowd","public interior hall"];
-}
 async function testImage(base, photo) {
   const url=String(photo && (photo.url||photo.thumbnail)||"");
   if(!/^https:\/\//i.test(url))return null;
@@ -132,19 +124,6 @@ async function testImage(base, photo) {
     const bytes=Buffer.from(await r.arrayBuffer());if(!bytes.length||bytes.length>6*1024*1024)return null;
     return {photo,dataUri:"data:"+type+";base64,"+bytes.toString("base64")};
   } catch { return null; }
-}
-async function searchPhoto(base,title) {
-  const first=photoQuery(title),queries=[...new Set([first,...photoAlternates(first)])],all=[],seen=new Set(),attempts=[];
-  for(const q of queries) {
-    try {
-      const d=await getJson(base+"/api/images?q="+encodeURIComponent(q)+"&limit=20",12000);
-      attempts.push({query:q,count:Number(d.count)||0});
-      const fresh=[];
-      for(const p of d.results||[]){const k=String(p.url||p.thumbnail||"");if(k&&!seen.has(k)){seen.add(k);all.push(p);fresh.push(p);}}
-      for(let i=0;i<fresh.length;i+=4){const batch=await Promise.all(fresh.slice(i,i+4).map(p=>testImage(base,p)));const found=batch.find(Boolean);if(found)return{image:found,photos:all.slice(0,18),attempts};}
-    } catch(e){attempts.push({query:q,error:String(e.message||e).slice(0,120)});}
-  }
-  return {image:null,photos:all.slice(0,18),attempts};
 }
 function esc(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");}
 function wrap(v,max){const out=[];let line="";for(const word of String(v||"").trim().split(/\s+/)){const n=line?line+" "+word:word;if(n.length>max&&line){out.push(line);line=word;}else line=n;}if(line)out.push(line);return out;}
@@ -193,6 +172,12 @@ export default async function handler(req){
   try{
     await patchSettings({lastRunAt:new Date().toISOString(),lastStatus:"running",lastMessage:"Repairing any old preview with missing graphic text, then searching fresh news."},store);
     await repairLegacyPreview(root,settings,store);
+    let photoHistory=await readPhotoHistory(store);
+    const previousPost=await store.get(LATEST_KEY,{type:"json",consistency:"strong"});
+    if(previousPost&&previousPost.photo&&!isPhotoUsed(previousPost.photo,photoHistory)){
+      photoHistory=rememberPhoto(photoHistory,previousPost.photo,previousPost.imageUpdatedAt||previousPost.generatedAt||new Date().toISOString());
+      await writePhotoHistory(photoHistory,store);
+    }
     const history=await readHistory(store),scan=await getFresh(root,history);
     if(!scan.stories.length){settings=await readSettings(store);const h=Math.max(1,Math.min(12,Number(settings.intervalHours)||3)),n=Date.now();await patchSettings({lastCompletedAt:new Date(n).toISOString(),lastRunAt:new Date(n-Math.max(0,h-1)*3600000).toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"No unused story was found after the same broad search used by Manual. Existing preview is preserved; hourly scheduler will retry."},store);return}
     let list=[];try{if(key)list=await models(key)}catch(e){console.warn("Gemini models unavailable:",String(e.message||e).slice(0,100))}
@@ -210,13 +195,15 @@ export default async function handler(req){
     await patchSettings({lastMessage:"Searching the same broad photo categories and checking multiple actual image loads."},store);
     const terms=photoQueries(story.title,draft.image_query),photos=[],seen=new Set(),attempts=[];
     for(const query of terms){try{const d=await getJson(root+"/api/images?q="+encodeURIComponent(query)+"&limit=20",14000);attempts.push({query,count:Number(d.count)||0});for(const p of d.results||[]){const k=String(p.id||p.url||p.thumbnail||"");if(p&&p.url&&!seen.has(k)){seen.add(k);photos.push(p)}}if(photos.length>=36)break}catch(error){attempts.push({query,error:String(error.message||error).slice(0,120)})}}
-    let chosenImage=null;for(let i=0;i<photos.length;i+=4){const batch=await Promise.all(photos.slice(i,i+4).map(p=>testImage(root,p)));chosenImage=batch.find(Boolean)||null;if(chosenImage)break}
-    await patchSettings({lastMessage:"Rendering the graphic and validating its headline, paragraph and badge."},store);
+    const freshPhotos=filterUnseenPhotos(photos,photoHistory);
+    const skippedPhotos=photos.length-freshPhotos.length;
+    let chosenImage=null;for(let i=0;i<freshPhotos.length;i+=4){const batch=await Promise.all(freshPhotos.slice(i,i+4).map(p=>testImage(root,p)));chosenImage=batch.find(Boolean)||null;if(chosenImage)break}
+    await patchSettings({lastMessage:"Rendering the graphic and validating its headline, paragraph and badge."+(skippedPhotos?" Skipped "+skippedPhotos+" recently used photo(s).":"")},store);
     const fontFiles=await ensureGraphicFont(),rendered=new Resvg(renderSvg(draft,chosenImage&&chosenImage.dataUri),{fitTo:{mode:"width",value:1080},font:{fontFiles,loadSystemFonts:false,defaultFontFamily:"Atkinson Hyperlegible",sansSerifFamily:"Atkinson Hyperlegible"}}).render();assertGraphicTextVisible(rendered);
     const png=rendered.asPng();await patchSettings({lastMessage:"Saving the post and updating no-repeat history only after graphic validation."},store);
-    const post={generatedAt:new Date().toISOString(),imageUpdatedAt:new Date().toISOString(),graphicTextVersion:2,pageName:draft.page_name,draft,story,chosen,articles,photo:chosenImage?chosenImage.photo:null,photos:photos.slice(0,18),photoAttempts:attempts,imageWasFound:Boolean(chosenImage)};post.imageKey=previewImageKey(post.generatedAt);
+    const post={generatedAt:new Date().toISOString(),imageUpdatedAt:new Date().toISOString(),graphicTextVersion:2,pageName:draft.page_name,draft,story,chosen,articles,photo:chosenImage?chosenImage.photo:null,photos:freshPhotos.slice(0,18),photoAttempts:attempts,imageWasFound:Boolean(chosenImage),photoHistoryCount:photoHistory.length};post.imageKey=previewImageKey(post.generatedAt);
     const latestHistory=await readHistory(store);if(isStoryUsed(story,latestHistory)){await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Skipped a story already recorded in server history. The repaired or previous valid preview remains visible."},store);return}
-    await store.set(post.imageKey,new Blob([png],{type:"image/png"}));await writeHistory(rememberStory(latestHistory,story),store);await store.setJSON(LATEST_KEY,post);
+    await store.set(post.imageKey,new Blob([png],{type:"image/png"}));await writeHistory(rememberStory(latestHistory,story),store);if(chosenImage)await writePhotoHistory(rememberPhoto(photoHistory,chosenImage.photo,post.generatedAt),store);await store.setJSON(LATEST_KEY,post);
     await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"success",latestAt:post.generatedAt,lastMessage:"New post saved: "+String(story.title||"").slice(0,140)+(chosenImage?" with verified representative photo.":" Broad photo search completed; branded artwork fallback used.")},store);
     console.log("REMOTE created post",story.title,"photo",Boolean(chosenImage),"photo queries",attempts.length);
   }catch(e){console.error("REMOTE worker:",String(e.stack||e));settings=await readSettings(store).catch(()=>settings);await fail(store,settings,e);}
