@@ -6,6 +6,7 @@ export const SETTINGS_KEY = "settings";
 export const HISTORY_KEY = "history";
 export const PHOTO_HISTORY_KEY = "photo-history";
 export const LATEST_KEY = "latest";
+export const THREADS_AUTH_KEY = "threads-auth";
 export const LATEST_IMAGE_KEY = "latest.png";
 export function previewImageKey(generatedAt) {
   const safe=String(generatedAt||"").replace(/[^a-zA-Z0-9_-]/g,"");
@@ -26,12 +27,14 @@ export function defaultSettings() {
     lastMessage: "Remote Auto is stopped.",
     latestAt: null,
     lastWorkingModel: "",
-    facebookEnabled: false,
-    facebookMode: "manual",
-    facebookLastStatus: "disabled",
-    facebookLastMessage: "Facebook publishing is off.",
-    facebookLastPostId: "",
-    facebookLastPostAt: null
+    threadsEnabled: false,
+    threadsMode: "manual",
+    threadsConnected: false,
+    threadsLastStatus: "disconnected",
+    threadsLastMessage: "Threads is not connected.",
+    threadsLastPostId: "",
+    threadsLastPostAt: null,
+    threadsTokenExpiresAt: null
   };
 }
 

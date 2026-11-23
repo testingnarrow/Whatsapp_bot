@@ -1,4 +1,5 @@
 import { getRemoteStore, readSettings, patchSettings } from "./lib/remote-state.mjs";
+import { refreshThreadsToken } from "./lib/threads-publishing.mjs";
 
 export const config = { schedule: "0 * * * *" };
 
@@ -10,6 +11,10 @@ function siteBase() {
 export default async function automationTick() {
   const store = getRemoteStore();
   const settings = await readSettings(store);
+  if (settings.threadsConnected) {
+    try { await refreshThreadsToken(store); }
+    catch (error) { await patchSettings({ threadsLastStatus: "refresh-warning", threadsLastMessage: String(error.message || error).slice(0, 280) }, store); console.warn("Threads token maintenance:", String(error.message || error).slice(0, 180)); }
+  }
   if (!settings.enabled) {
     console.log("Remote Auto is disabled; skipping scheduled tick.");
     return;

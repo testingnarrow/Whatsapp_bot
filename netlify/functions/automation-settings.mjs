@@ -3,7 +3,7 @@ import {
   LATEST_KEY, previewImageKey, readPhotoHistory, writePhotoHistory, rememberPhoto
 } from "./lib/remote-state.mjs";
 import { isPhotoUsed } from "./lib/news-generation-core.mjs";
-import { facebookConfiguration, publishLatestPost } from "./lib/facebook-publishing.mjs";
+import { threadsConfiguration, publishLatestPost } from "./lib/threads-publishing.mjs";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -167,32 +167,32 @@ export default async function handler(request) {
       return json(200, { ok: true, status: publicStatus(updated) });
     }
 
-    if (actionName === "facebook-settings") {
+    if (actionName === "threads-settings") {
       const mode = body.mode === "auto" ? "auto" : "manual";
       const enabled = Boolean(body.enabled);
-      if (enabled && !facebookConfiguration().configured) {
-        return json(503, { error: "Set FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN in Netlify environment variables before enabling Facebook publishing." });
+      if (enabled && !threadsConfiguration().configured) {
+        return json(503, { error: "Set THREADS_PAGE_ID and THREADS_PAGE_ACCESS_TOKEN in Netlify environment variables before enabling Threads publishing." });
       }
       const updated = await patchSettings({
-        facebookEnabled: enabled,
-        facebookMode: mode,
-        facebookLastStatus: enabled ? "ready" : "disabled",
-        facebookLastMessage: enabled
-          ? (mode === "auto" ? "Facebook publishing is enabled for server Auto posts." : "Facebook publishing is enabled. Manual posts need the Publish to Facebook button.")
-          : "Facebook publishing is off. No new posts will be sent."
+        threadsEnabled: enabled,
+        threadsMode: mode,
+        threadsLastStatus: enabled ? "ready" : "disabled",
+        threadsLastMessage: enabled
+          ? (mode === "auto" ? "Threads publishing is enabled for server Auto posts." : "Threads publishing is enabled. Manual posts need the Publish to Threads button.")
+          : "Threads publishing is off. No new posts will be sent."
       }, store);
       return json(200, { ok: true, status: publicStatus(updated) });
     }
 
-    if (actionName === "publish-latest") {
+    if (actionName === "threads-publish-latest") {
       const currentSettings = await readSettings(store);
-      if (!currentSettings.facebookEnabled) return json(409, { error: "Facebook publishing is OFF. Turn it on first." });
-      if (!facebookConfiguration().configured) return json(503, { error: "Facebook Page credentials are missing from Netlify environment variables." });
+      if (!currentSettings.threadsEnabled) return json(409, { error: "Threads publishing is OFF. Turn it on first." });
+      if (!threadsConfiguration().appConfigured) return json(503, { error: "Threads app credentials are missing from Netlify environment variables." });
       try {
-        const publish = await publishLatestPost(store, body.expectedGeneratedAt, "manual");
+        const publish = await publishLatestThreadsPost(store, body.expectedGeneratedAt, "manual");
         return json(200, { ok: true, publish, status: publicStatus(await readSettings(store)) });
       } catch (error) {
-        return json(Number(error && error.status) || 502, { error: String(error && error.message || error || "Facebook publish failed").slice(0, 350) });
+        return json(Number(error && error.status) || 502, { error: String(error && error.message || error || "Threads publish failed").slice(0, 350) });
       }
     }
 
@@ -226,12 +226,15 @@ function publicStatus(settings) {
     latestAt: settings.latestAt || null,
     nextRunAt: settings.enabled && Number.isFinite(last) ? new Date(last + interval * 3600000).toISOString() : null,
     serverConfigured: Boolean(process.env.REMOTE_CONTROL_TOKEN && process.env.GEMINI_API_KEY),
-    facebookConfigured: facebookConfiguration().configured,
-    facebookEnabled: Boolean(settings.facebookEnabled),
-    facebookMode: settings.facebookMode === "auto" ? "auto" : "manual",
-    facebookLastStatus: String(settings.facebookLastStatus || "disabled"),
-    facebookLastMessage: String(settings.facebookLastMessage || "Facebook publishing is off."),
-    facebookLastPostId: String(settings.facebookLastPostId || ""),
-    facebookLastPostAt: settings.facebookLastPostAt || null
+    threadsConfigured: Boolean(settings.threadsConnected),
+    threadsConnected: Boolean(settings.threadsConnected),
+    threadsAppConfigured: threadsConfiguration().appConfigured,
+    threadsEnabled: Boolean(settings.threadsEnabled),
+    threadsMode: settings.threadsMode === "auto" ? "auto" : "manual",
+    threadsLastStatus: String(settings.threadsLastStatus || "disabled"),
+    threadsLastMessage: String(settings.threadsLastMessage || "Threads publishing is off."),
+    threadsLastPostId: String(settings.threadsLastPostId || ""),
+    threadsLastPostAt: settings.threadsLastPostAt || null,
+    threadsTokenExpiresAt: settings.threadsTokenExpiresAt || null
   };
 }

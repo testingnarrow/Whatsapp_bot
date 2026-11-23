@@ -39,6 +39,12 @@
   force = true
 
 [[redirects]]
+  from = "/api/threads-auth"
+  to = "/.netlify/functions/threads-auth"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/automation-image"
   to = "/.netlify/functions/automation-latest-image"
   status = 200
