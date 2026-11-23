@@ -3,7 +3,7 @@ import {
   LATEST_KEY, previewImageKey, readPhotoHistory, writePhotoHistory, rememberPhoto
 } from "./lib/remote-state.mjs";
 import { isPhotoUsed } from "./lib/news-generation-core.mjs";
-import { threadsConfiguration, publishLatestPost } from "./lib/threads-publishing.mjs";
+import { threadsConfiguration, publishLatestThreadsPost } from "./lib/threads-publishing.mjs";
 
 const HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -170,8 +170,11 @@ export default async function handler(request) {
     if (actionName === "threads-settings") {
       const mode = body.mode === "auto" ? "auto" : "manual";
       const enabled = Boolean(body.enabled);
-      if (enabled && !threadsConfiguration().configured) {
-        return json(503, { error: "Set THREADS_PAGE_ID and THREADS_PAGE_ACCESS_TOKEN in Netlify environment variables before enabling Threads publishing." });
+      if (enabled && !threadsConfiguration().appConfigured) {
+        return json(503, { error: "Set THREADS_APP_ID, THREADS_APP_SECRET and THREADS_REDIRECT_URI in Netlify environment variables before enabling Threads publishing." });
+      }
+      if (enabled && !settings.threadsConnected) {
+        return json(409, { error: "Connect your Threads account first using the Connect Threads button." });
       }
       const updated = await patchSettings({
         threadsEnabled: enabled,

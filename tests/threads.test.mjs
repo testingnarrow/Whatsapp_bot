@@ -12,6 +12,7 @@ test("Threads captions stay within the 500-character API limit",()=>{
 test("Threads app configuration requires the app ID, secret and exact redirect URI",()=>{
  assert.equal(threadsConfiguration({THREADS_APP_ID:"1",THREADS_APP_SECRET:"secret",THREADS_REDIRECT_URI:"https://example.test/api/threads-auth?action=callback"}).appConfigured,true);
  assert.equal(threadsConfiguration({THREADS_APP_ID:"1",THREADS_APP_SECRET:""}).appConfigured,false);
+ assert.equal(threadsConfiguration({THREADS_PAGE_ID:"123",THREADS_PAGE_ACCESS_TOKEN:"token"}).appConfigured,false);
 });
 
 test("Threads token refresh persists the replacement token and expiry",async()=>{
