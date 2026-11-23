@@ -9,7 +9,7 @@ const originalFetch = globalThis.fetch;
 test('news endpoint parses RSS and normalizes candidate titles', async () => {
   const xml = '<?xml version="1.0"?><rss><channel><item><title>Penguin surprises visitors - Example News</title><link>https://example.com/story</link><description>A detailed story about a surprising penguin event with enough context.</description><pubDate>' + new Date().toUTCString() + '</pubDate><source>Example News</source></item></channel></rss>';
   globalThis.fetch = async () => new Response(xml, { status: 200, headers: { 'Content-Type': 'application/rss+xml' } });
-  try { const response = await news(new Request('https://local.test/api/news?limit=60')); const data = await response.json(); assert.equal(response.status, 200); assert.equal(data.count, 1); assert.equal(data.candidates[0].title, 'Penguin surprises visitors'); assert.equal(data.candidates[0].source, 'Example News'); assert.equal(data.queries.filter(query => query.ok).length, 7); }
+  try { const response = await news(new Request('https://local.test/api/news?limit=60')); const data = await response.json(); assert.equal(response.status, 200); assert.equal(data.count, 1); assert.equal(data.candidates[0].title, 'Penguin surprises visitors'); assert.equal(data.candidates[0].source, 'Example News'); assert.equal(data.queries.filter(query => query.ok).length, 8); }
   finally { globalThis.fetch = originalFetch; }
 });
 

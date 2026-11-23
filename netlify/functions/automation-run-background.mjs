@@ -66,12 +66,20 @@ async function getJson(url, ms = 15000) {
 }
 function urlKey(raw) { try { const u = new URL(raw); if (u.protocol !== "https:") return ""; u.hash = ""; return u.href; } catch { return ""; } }
 function score(s) {
-  const t = (String(s.title || "") + " " + String(s.description || "")).toLowerCase();
-  let n = ["odd","weird","bizarre","unusual","unexpected","strange","surprising","rare","discovery","fossil","animal","museum","auction","record","mystery","funny"].filter(w => t.includes(w)).length * 3;
-  if (String(s.description || "").length > 90) n += 2;
-  if (/apnews|upi|reuters|bbc|abcnews|theguardian|cbsnews|nbcnews/i.test(String(s.source || ""))) n += 2;
-  n += Math.max(0, 5 - Math.max(0, Date.now() - (Date.parse(s.publishedAt || "") || Date.now())) / 86400000);
-  return n;
+  const textValue = (String(s.title || "") + " " + String(s.description || "")).toLowerCase();
+  const source = String(s.source || "").toLowerCase();
+  const ageHours = Math.max(0, (Date.now() - (Date.parse(s.publishedAt || "") || Date.now())) / 3600000);
+  const impactTerms = ["earthquake","tsunami","hurricane","typhoon","cyclone","flood","wildfire","eruption","volcano","war","invasion","attack","terror","crash","derailment","explosion","mass casualty","president","summit","sanction","global","international"];
+  const importanceTerms = ["killed","dead","injured","evacuated","disaster","emergency","historic","record","championship","final","tournament","olympic","world cup","election","agreement","rescue","outbreak","recall","major"];
+  const impactHits = impactTerms.filter(w => textValue.includes(w)).length;
+  const importanceHits = importanceTerms.filter(w => textValue.includes(w)).length;
+  const trusted = /reuters|apnews|associated press|bbc|dw\.com|aljazeera|theguardian|france24|afp|nhk|abc\.net\.au|cbc\.ca|bloomberg|espn|olympics\.com/.test(source);
+  const globalImpact = Math.min(30, impactHits * 6 + (/(world|global|international|across|countries)/.test(textValue) ? 6 : 0));
+  const newsImportance = Math.min(25, importanceHits * 5 + (String(s.description || "").length > 120 ? 3 : 0));
+  const sourceCredibility = trusted ? 17 : 8;
+  const recency = Math.max(0, Math.round(15 * Math.exp(-ageHours / 72)));
+  const internationalCoverage = Math.min(10, Number(s.coverageCount || 1) > 1 ? Math.min(10, 5 + (Number(s.coverageCount) - 2) * 2) : 2);
+  return globalImpact + newsImportance + sourceCredibility + recency + internationalCoverage;
 }
 async function getFresh(baseUrl, history) {
   const paths = ["/api/news?limit=200&broad=1", "/api/news?limit=200&broad=1&older=1", "/api/news?limit=200&broad=1&older=1&wide=1"];
@@ -83,7 +91,11 @@ async function getFresh(baseUrl, history) {
     } catch(e) { tries.push({path,error:String(e.message || e).slice(0,120)}); }
     if (found.size >= 15) break;
   }
-  return { stories:[...found.values()].sort((a,b)=>score(b)-score(a)), tries };
+  const stories=[...found.values()];
+  const titleGroups=new Map();
+  for(const item of stories){const key=String(item.title||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().split(" ").slice(0,9).join(" ");if(!titleGroups.has(key))titleGroups.set(key,new Set());titleGroups.get(key).add(String(item.source||"").toLowerCase());}
+  for(const item of stories){const key=String(item.title||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim().split(" ").slice(0,9).join(" ");item.coverageCount=(titleGroups.get(key)||new Set()).size;item.preliminaryScore=score(item);}
+  return { stories:stories.sort((a,b)=>b.preliminaryScore-a.preliminaryScore), tries };
 }
 function modelScore(m) { const s=String(m.name||"").toLowerCase(); return (/(preview|experimental|latest)/.test(s)?0:1000)+(/flash-lite/.test(s)?250:/flash/.test(s)?180:0); }
 async function models(apiKey) {
@@ -184,8 +196,8 @@ export default async function handler(req){
     let list=[];try{if(key)list=await models(key)}catch(e){console.warn("Gemini models unavailable:",String(e.message||e).slice(0,100))}
     await patchSettings({lastMessage:"Ranking fresh candidates with the same assignment-editor prompt as Manual."},store);
     const candidates=scan.stories.filter(x=>x&&x.title&&x.url&&!isStoryUsed(x,history)).slice(0,60);
-    let chosen={selected:candidates.slice().sort((a,b)=>(Date.parse(b.publishedAt)||0)-(Date.parse(a.publishedAt)||0))[0],supporting:[],reason:"Newest unused candidate after broad search.",confidence:"medium",gaps:[]};
-    if(key&&list.length){try{const result=await ai(buildRankingPrompt(candidates),key,list,settings,store,1000),ranked=resolveRanking(result,candidates,x=>isStoryUsed(x,history));if(ranked)chosen=ranked}catch(error){console.warn("Shared story ranking fallback:",String(error.message||error).slice(0,140))}}
+    let chosen={selected:candidates.slice().sort((a,b)=>score(b)-score(a))[0],supporting:[],reason:"Highest preliminary 100-point newsroom score among unused candidates.",confidence:"medium",gaps:[],scores:[]};
+    if(key&&list.length){try{const result=await ai(buildRankingPrompt(candidates),key,list,settings,store,5000),ranked=resolveRanking(result,candidates,x=>isStoryUsed(x,history));if(ranked)chosen=ranked}catch(error){console.warn("Shared story ranking fallback:",String(error.message||error).slice(0,140))}}
     if(!chosen.selected){await patchSettings({lastCompletedAt:new Date().toISOString(),lastStatus:"waiting-for-fresh-news",lastMessage:"Every candidate was previously used; keeping the last valid preview and retrying later."},store);return}
     const story=chosen.selected,related=[story,...(chosen.supporting||[])].filter((x,i,a)=>x&&x.url&&a.findIndex(y=>y&&y.url===x.url)===i&&!isStoryUsed(x,history)).slice(0,4);
     if(!related.some(x=>x.url===story.url))related.unshift(story);

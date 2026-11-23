@@ -1,37 +1,37 @@
 import { readHistory, isStoryUsed } from "./lib/remote-state.mjs";
 const QUERIES = [
-  'site:upi.com/Odd_News OR site:upi.com/Top_News weird unusual when:14d',
-  '"odd news" OR "weird news" United States when:14d',
-  'bizarre unusual surprising people United States news when:14d',
-  'unexpected workplace workers gaming time off United States when:30d',
-  'strange animals unusual discoveries US news when:14d',
-  'site:apnews.com/hub/oddities OR site:apnews.com oddities when:14d',
-  'funny unusual real life human interest America when:14d'
+  'world news major international events diplomacy conflict government when:3d',
+  'natural disasters earthquakes floods hurricanes wildfires volcanoes when:7d',
+  'major accidents transport disasters industrial accidents emergency when:7d',
+  'global sports latest major tournaments records championships when:3d',
+  'international breaking news major developments when:3d',
+  'Reuters world news international events when:7d',
+  'Associated Press world news disasters sports when:7d',
+  'BBC world news international events sports when:7d'
 ];
 const BROAD_QUERIES = [
-  '"oddities" OR "odd news" OR "weird news" United States when:30d',
-  'unusual human interest people America news when:30d',
-  'strange discovery museum auction United States news when:30d',
-  'bizarre real event people USA local news when:30d',
-  'unusual animals discovery United States news when:30d',
-  'unexpected public event USA news when:30d',
-  'site:upi.com/Odd_News unusual OR bizarre when:30d',
-  'site:apnews.com/hub/oddities OR site:apnews.com/article oddities when:30d'
+  'world events international news major developments when:14d',
+  'natural disaster earthquake tsunami flood wildfire storm international when:14d',
+  'major accident crash explosion emergency international news when:14d',
+  'international sports tournament championship world record when:14d',
+  'Olympics football cricket tennis athletics basketball world sports news when:14d',
+  'global politics diplomacy elections government international news when:14d',
+  'science technology breakthrough international news when:14d',
+  'economy business global impact international news when:14d'
 ];
 const OLDER_QUERIES = [
-  '"odd news" OR "weird news" United States when:90d',
-  'unusual human interest news America when:90d',
-  'strange animal discovery United States when:90d',
-  'bizarre museum auction discovery when:90d',
-  'unexpected event people USA news when:90d',
-  'site:upi.com/Odd_News OR site:apnews.com/hub/oddities when:90d'
+  'major world events international news when:30d',
+  'natural disasters major accidents international news when:30d',
+  'major world sports events records championships when:30d',
+  'international politics diplomacy conflict news when:30d',
+  'global science technology developments when:30d'
 ];
 const WIDE_QUERIES = [
-  'unusual people stories United States news',
-  'unexpected discoveries and strange events United States',
-  'oddities human interest news America',
-  'bizarre true stories from local US news',
-  'unusual animals public events America'
+  'latest world events international headlines',
+  'major natural disasters and emergency events worldwide',
+  'major international sports results records tournaments',
+  'important global political diplomatic developments',
+  'international news major events Reuters AP BBC'
 ];
 const headers = {
   'Access-Control-Allow-Origin': '*',
